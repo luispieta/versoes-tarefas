@@ -33,7 +33,6 @@ from dotenv import load_dotenv
 
 load_dotenv()  # lê o arquivo .env na mesma pasta e carrega as variáveis
 
-# ----------------------- CONFIGURAÇÃO -----------------------
 JIRA_URL = "https://nimitz.atlassian.net"
 CONFLUENCE_URL = "https://nimitz.atlassian.net/wiki"
 
@@ -45,6 +44,11 @@ CUSTOM_FIELD_DOC = os.environ["CONFLUENCE_CUSTOM_FIELD_DOC"]
 # verticais/projetos são organizadas por páginas (ex: pastas "CRM",
 # "Fiscal", etc.) dentro deste mesmo espaço, não por spaces separados.
 SPACE_KEY = "DPU"
+
+# ID da página "pasta" onde as páginas de versão devem ser criadas
+# (ex: "CRM - Notas de versão 2026"). Usado automaticamente quando o
+# script precisa criar uma página nova.
+DEFAULT_ANCESTOR_ID = "4911792138"
 
 # Cores de destaque por tipo de issue, iguais à legenda usada nas páginas de
 # release (verde claro = melhoria, vermelho claro = bug/correção).
@@ -69,8 +73,6 @@ LEGEND_BUG_TEXT = "Correções e ajustes de validações incorretas."
 
 auth = HTTPBasicAuth(EMAIL, API_TOKEN)
 headers = {"Content-Type": "application/json"}
-# --------------------------------------------------------------
-
 
 def get_issue_documentation(issue_key: str):
     """Busca resumo, tipo da issue e conteúdo (ADF) do campo Documentation."""
@@ -166,9 +168,20 @@ def build_header_block(version_title: str) -> str:
 """
 
 
-def create_confluence_page(space_key: str, title: str) -> dict:
+def create_confluence_page(space_key: str, title: str, ancestor_id: str = None) -> dict:
     """Cria uma página nova no Confluence já com o cabeçalho padrão
-    (banner + legenda + tabela com cabeçalho de colunas)."""
+    (banner + legenda + tabela com cabeçalho de colunas).
+
+    Se ancestor_id for informado, a página é criada DENTRO daquela página
+    pai (ex: o ID da pasta "CRM - Notas de versão 2026"), em vez de ir para
+    a raiz do espaço.
+
+    Estratégia em 2 etapas (mais confiável do que mandar tudo na criação):
+      1. Cria a página vazia, só com o título.
+      2. Atualiza essa página com o cabeçalho completo, usando o mesmo
+         caminho (PUT) que já usamos para inserir as linhas da tabela e
+         que sabemos que funciona corretamente.
+    """
     url = f"{CONFLUENCE_URL}/rest/api/content"
     body = {
         "type": "page",
@@ -176,17 +189,28 @@ def create_confluence_page(space_key: str, title: str) -> dict:
         "space": {"key": space_key},
         "body": {
             "storage": {
-                "value": build_header_block(title),
+                "value": "<p>Página criada automaticamente. Aguardando conteúdo...</p>",
                 "representation": "storage",
             }
         },
     }
+    if ancestor_id:
+        body["ancestors"] = [{"id": ancestor_id}]
+
     resp = requests.post(url, auth=auth, headers=headers, json=body)
     if not resp.ok:
         print(f"[erro create_confluence_page] status={resp.status_code} body={resp.text}")
     resp.raise_for_status()
-    print(f"[ok] Página '{title}' criada no espaço '{space_key}' com o cabeçalho padrão.")
-    return resp.json()
+    created = resp.json()
+    page_id = created["id"]
+    print(f"[ok] Página vazia '{title}' criada (ID {page_id}). Aplicando cabeçalho...")
+
+    # Etapa 2: agora atualiza com o cabeçalho completo via PUT
+    header_html = build_header_block(title)
+    update_confluence_page(page_id, title, header_html, current_version=1)
+
+    print(f"[ok] Cabeçalho aplicado com sucesso na página '{title}' (ID {page_id}).")
+    return created
 
 
 def append_row_to_table(page_storage_html: str, issue_key: str, summary: str,
@@ -230,11 +254,15 @@ def update_confluence_page(page_id: str, title: str, new_body: str,
 
 
 def sync_multiple_issues(issue_keys: list, fix_version: str = None,
-                          page_id: str = None):
+                          page_id: str = None, ancestor_id: str = None):
     """
     Sincroniza VÁRIAS issues de uma vez na mesma página do Confluence,
     fazendo apenas 1 leitura e 1 gravação da página no final (mais rápido
     e evita criar várias versões desnecessárias no histórico da página).
+
+    ancestor_id: ID da página "pasta" (ex: "CRM - Notas de versão 2026")
+    onde a nova página deve ser criada, caso ela ainda não exista. Se você
+    não passar, a página nova vai para a raiz do espaço.
 
     Uso:
         sync_multiple_issues(
@@ -242,7 +270,6 @@ def sync_multiple_issues(issue_keys: list, fix_version: str = None,
             fix_version="4.0.2501.1027"
         )
     """
-    created_now = False
     if not page_id:
         if not fix_version:
             raise ValueError("Informe page_id ou fix_version.")
@@ -250,9 +277,8 @@ def sync_multiple_issues(issue_keys: list, fix_version: str = None,
         if not page_id:
             print(f"[info] Página '{fix_version}' não existe ainda no espaço "
                   f"'{SPACE_KEY}'. Criando com o cabeçalho padrão...")
-            new_page = create_confluence_page(SPACE_KEY, fix_version)
+            new_page = create_confluence_page(SPACE_KEY, fix_version, ancestor_id=ancestor_id)
             page_id = new_page["id"]
-            created_now = True
 
     # Busca a página UMA vez (mesmo se acabou de ser criada, para pegar a
     # versão/estrutura mais atual retornada pela API)
@@ -315,10 +341,6 @@ if __name__ == "__main__":
 
     # Exemplo 2: lista inteira de issues, tudo na mesma página, de uma vez
     lista_de_tarefas = [
-        "CWM-2867", "CWM-2904", "CWM-2865", "CWM-3041", "CWM-2871",
-        "CWM-2997", "CWM-2922", "CWM-2998", "CWM-2547", "CWM-2368",
-        "CWM-2994", "CWM-2680", "CWM-2690", "CWM-2737", "CWM-2890",
-        "CWM-2414", "CWM-2837", "CWM-2794", "CWM-2555", "CWM-3062",
-        "CWM-3050",
+        "CWM-2867", 
     ]
-    sync_multiple_issues(lista_de_tarefas, fix_version="4.0.2501.1027")
+    sync_multiple_issues(lista_de_tarefas, fix_version="4.0.2501.1028")
