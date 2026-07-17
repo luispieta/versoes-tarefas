@@ -31,6 +31,8 @@ versoes-tarefas/
 ├── .env                       # credenciais (NUNCA compartilhar ou subir pro Git)
 ├── .gitignore                 # garante que .env e .venv não vão pro Git
 ├── requirements.txt           # lista de bibliotecas necessárias
+├── setup.bat                  # instalação automática (Windows)
+├── setup.sh                   # instalação automática (Git Bash/macOS/Linux)
 ├── jira_confluence_sync.py    # o script principal (lógica de sincronização)
 └── app.py                     # interface web local (opcional, usa as funções do script principal)
 ```
@@ -40,6 +42,24 @@ versoes-tarefas/
 ---
 
 ## 3. Configuração (fazer uma vez por máquina)
+
+### 3.0. Opção rápida: setup automático
+
+Em vez de rodar os comandos manualmente (seções 3.1 a 3.3), você pode usar o script de instalação incluído no projeto, que faz tudo de uma vez: cria o `.venv`, instala as dependências e cria um `.env` de exemplo.
+
+**Windows (CMD ou clique duplo no arquivo):**
+```cmd
+setup.bat
+```
+
+**Git Bash / macOS / Linux:**
+```bash
+./setup.sh
+```
+
+Depois de rodar, só falta **editar o `.env`** com as credenciais reais (ele é criado com valores de exemplo, que precisam ser substituídos) — o script avisa isso no final.
+
+> Se preferir entender/rodar cada passo manualmente (ou algo no `setup` der problema), siga as seções 3.1 a 3.3 abaixo normalmente.
 
 ### 3.1. Criar e ativar o ambiente virtual
 
@@ -109,37 +129,9 @@ Se algum tipo de issue do seu Jira não estiver na lista, o sistema avisa no ter
 
 ---
 
-## 4. Como executar — Opção A: pela interface web local
+## 4. Como executar — Opção A: pelo script direto
 
-Mais prático no dia a dia: não precisa editar código, só colar a lista de issues num formulário.
-
-### 4.1. Rodar o servidor local
-
-Com o `.venv` ativado e `app.py` na mesma pasta de `jira_confluence_sync.py`:
-
-```bash
-python app.py
-```
-
-### 4.2. Abrir no navegador
-
-```
-http://127.0.0.1:5000
-```
-
-### 4.3. Usar o formulário
-
-- **Versão de destino:** o `fix_version` (ex: `4.0.2501.1031`)
-- **Chaves das issues:** cole a lista de tarefas — aceita separadas por vírgula, espaço, ou uma por linha (pode colar direto do Jira sem formatar)
-- Clique em **Sincronizar** — o resultado (os mesmos logs `[ok]`, `[skip]`, `[aviso]` do terminal) aparece na própria página
-
-Para parar o servidor, volte ao terminal onde ele está rodando e aperte `Ctrl+C`.
-
----
-
-## 5. Como executar — Opção B: pelo script direto
-
-### 5.1. Editar a lista de tarefas a sincronizar
+### 4.1. Editar a lista de tarefas a sincronizar
 
 Abra `jira_confluence_sync.py`, vá até o final do arquivo (`if __name__ == "__main__":`) e edite:
 
@@ -156,11 +148,39 @@ sync_multiple_issues(lista_de_tarefas, fix_version="4.0.2501.1031")
 
 > ⚠️ **Importante:** o valor de `fix_version` precisa ser **idêntico** ao título da página no Confluence (ou ao valor que a página vai receber, se ainda não existir). Diferenças de espaço ou caracteres impedem o sistema de encontrar/criar a página certa.
 
-### 5.2. Rodar
+### 4.2. Rodar
 
 ```bash
 python jira_confluence_sync.py
 ```
+
+---
+
+## 5. Como executar — Opção B: pela interface web local
+
+Mais prático no dia a dia: não precisa editar código, só colar a lista de issues num formulário.
+
+### 5.1. Rodar o servidor local
+
+Com o `.venv` ativado e `app.py` na mesma pasta de `jira_confluence_sync.py`:
+
+```bash
+python app.py
+```
+
+### 5.2. Abrir no navegador
+
+```
+http://127.0.0.1:5000
+```
+
+### 5.3. Usar o formulário
+
+- **Versão de destino:** o `fix_version` (ex: `4.0.2501.1031`)
+- **Chaves das issues:** cole a lista de tarefas — aceita separadas por vírgula, espaço, ou uma por linha (pode colar direto do Jira sem formatar)
+- Clique em **Sincronizar** — o resultado (os mesmos logs `[ok]`, `[skip]`, `[aviso]` do terminal) aparece na própria página
+
+Para parar o servidor, volte ao terminal onde ele está rodando e aperte `Ctrl+C`.
 
 ---
 
