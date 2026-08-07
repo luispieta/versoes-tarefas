@@ -2,7 +2,8 @@ import io
 import contextlib
 import traceback
 
-from flask import Flask, request, render_template_string
+from flask import Flask, render_template_string, request
+
 
 from jira_confluence_sync import (
     sync_multiple_issues,

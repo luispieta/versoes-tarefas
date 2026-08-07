@@ -31,8 +31,10 @@ versoes-tarefas/
 ├── .env                       # credenciais (NUNCA compartilhar ou subir pro Git)
 ├── .gitignore                 # garante que .env e .venv não vão pro Git
 ├── requirements.txt           # lista de bibliotecas necessárias
-├── setup.bat                  # instalação automática (Windows)
-├── setup.sh                   # instalação automática (Git Bash/macOS/Linux)
+├── setup.bat                  # instalação automática (Windows) — rodar 1x
+├── setup.sh                   # instalação automática (Git Bash/macOS/Linux) — rodar 1x
+├── rodar_interface.bat        # abre a interface web (duplo clique, Windows)
+├── rodar_script.bat           # roda o script direto (duplo clique, Windows)
 ├── jira_confluence_sync.py    # o script principal (lógica de sincronização)
 └── app.py                     # interface web local (opcional, usa as funções do script principal)
 ```
@@ -87,7 +89,17 @@ Quando ativo, o prompt mostra `(.venv)` no início da linha.
 pip install -r requirements.txt
 ```
 
-Isso instala: `requests`, `python-dotenv` e `flask` (usado pela interface web).
+Ou, uma por uma:
+```bash
+pip install requests
+pip install python-dotenv
+pip install flask
+```
+
+Conferir se instalou certo:
+```bash
+pip list
+```
 
 ### 3.3. Criar o arquivo `.env`
 
@@ -150,6 +162,9 @@ sync_multiple_issues(lista_de_tarefas, fix_version="4.0.2501.1031")
 
 ### 4.2. Rodar
 
+**Windows — atalho rápido:** dê duplo clique em `rodar_script.bat`.
+
+**Ou manualmente:**
 ```bash
 python jira_confluence_sync.py
 ```
@@ -162,7 +177,9 @@ Mais prático no dia a dia: não precisa editar código, só colar a lista de is
 
 ### 5.1. Rodar o servidor local
 
-Com o `.venv` ativado e `app.py` na mesma pasta de `jira_confluence_sync.py`:
+**Windows — atalho rápido:** dê duplo clique em `rodar_interface.bat` (ele já usa o Python de dentro do `.venv`, não precisa ativar nada manualmente).
+
+**Ou manualmente**, com o `.venv` ativado e `app.py` na mesma pasta de `jira_confluence_sync.py`:
 
 ```bash
 python app.py
