@@ -1,10 +1,11 @@
 import os
+import re
 import json
 import requests
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 JIRA_URL = "https://nimitz.atlassian.net"
 CONFLUENCE_URL = "https://nimitz.atlassian.net/wiki"
@@ -152,6 +153,11 @@ def create_confluence_page(space_key: str, title: str, ancestor_id: str = None) 
     return created
 
 
+def issue_already_on_page(page_storage_html: str, issue_key: str) -> bool:
+    """Verifica se a issue já possui linha na página (evita duplicar em execuções repetidas)."""
+    return re.search(rf"/browse/{re.escape(issue_key)}\b", page_storage_html) is not None
+
+
 def append_row_to_table(page_storage_html: str, issue_key: str, summary: str,
                          doc_storage_html: str, row_color: str = None) -> str:
     color_attr = f' data-highlight-colour="{row_color}"' if row_color else ""
@@ -206,6 +212,11 @@ def sync_multiple_issues(issue_keys: list, fix_version: str = None,
     skipped = []
 
     for issue_key in issue_keys:
+        if issue_already_on_page(updated_body, issue_key):
+            print(f"[skip] {issue_key} já está na página '{title}'. Ignorando para não duplicar.")
+            skipped.append(issue_key)
+            continue
+
         summary, adf_content, issue_type = get_issue_documentation(issue_key)
         if not adf_content:
             print(f"[skip] {issue_key} não possui conteúdo no campo Documentation.")
