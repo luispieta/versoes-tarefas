@@ -1,2 +1,5 @@
 .env
-.env
+.venv/
+__pycache__/
+sync.log
+last_run.txt

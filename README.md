@@ -35,8 +35,12 @@ versoes-tarefas/
 ├── setup.sh                   # instalação automática (Git Bash/macOS/Linux) — rodar 1x
 ├── rodar_interface.bat        # abre a interface web (duplo clique, Windows)
 ├── rodar_script.bat           # roda o script direto (duplo clique, Windows)
+├── rodar_poller.bat           # roda o modo automático (alvo do Agendador de Tarefas)
+├── rodar_poller_dryrun.bat    # simula o modo automático (dry-run: não escreve no Confluence)
 ├── jira_confluence_sync.py    # o script principal (lógica de sincronização)
-└── app.py                     # interface web local (opcional, usa as funções do script principal)
+├── poller.py                  # modo automático: lê a planilha e publica as tarefas "Finalizada"
+├── app.py                     # interface web local (opcional, usa as funções do script principal)
+└── sync.log                   # log das execuções automáticas (gerado em runtime, não versionar)
 ```
 
 > O código de `jira_confluence_sync.py` está sem comentários por preferência do time — esta documentação é a referência para entender o que cada parte faz.
@@ -266,16 +270,146 @@ Para parar o servidor, volte ao terminal onde ele está rodando e aperte `Ctrl+C
 ## 9. Perguntas frequentes
 
 **Preciso rodar isso toda vez que fechar uma issue?**
-Por enquanto, sim — roda manualmente (pelo script ou pela interface). Foi desenhado para também poder ser chamado automaticamente por um webhook do Jira Automation no futuro, mas essa parte ainda não foi configurada.
+Não é obrigatório. Além das duas formas manuais (script e interface), existe o **modo automático** (seção 10): o `poller.py` lê a planilha de versões e publica sozinho as tarefas marcadas como `Finalizada`, e pode ser agendado no Windows para rodar de tempos em tempos.
 
 **Posso sincronizar issues de versões diferentes na mesma execução?**
 Não diretamente — cada chamada de `sync_multiple_issues()` grava numa única página/versão. Se precisar sincronizar duas versões diferentes, rode duas vezes (ou adicione duas chamadas no final do script, ou use a interface duas vezes, uma para cada `fix_version`).
 
 **O que acontece se eu rodar duas vezes com a mesma lista?**
-As issues serão adicionadas novamente como linhas duplicadas na tabela — o sistema não verifica se uma issue já foi sincronizada antes. Tenha cuidado para não rodar duas vezes com a mesma lista sem necessidade.
+Nada de errado: antes de inserir cada linha, o sistema verifica se a issue **já está** na página (pelo link `/browse/CHAVE`) e, se estiver, ignora com `[skip] ... já está na página`. Ou seja, é seguro reprocessar — é justamente isso que permite o modo automático rodar de tempos em tempos sem duplicar linhas.
 
 **Onde acompanho o histórico de alterações da página?**
 No próprio Confluence — cada vez que o sistema salva a página, isso gera uma nova versão no histórico (visível em "..." → "Page History").
 
 **Preciso reinstalar tudo se copiar o projeto pra outra máquina?**
 Sim: crie o `.venv` do zero (`python -m venv .venv`), instale as dependências (`pip install -r requirements.txt`) e recrie o `.env` manualmente — nenhum desses três vai junto quando você clona ou baixa o projeto.
+
+---
+
+## 10. Geração automática ao finalizar tarefas (modo automático)
+
+Em vez de colar listas manualmente, o `poller.py` usa a **planilha de versões** como fonte de
+verdade e publica sozinho as tarefas que já estão prontas.
+
+### 10.1. Como funciona
+
+```
+[Jira] --(add-on Sheet Director, já existe)--> [Planilha "Versões 2026"]
+                                                        |
+                              (Agendador de Tarefas do Windows, a cada N min)
+                                                        v
+                          poller.py descobre sozinho as abas de versão (1031, 1032, ...)
+                          e, em cada uma, filtra as linhas com Status = "Finalizada"
+                                                        |
+                        para cada tarefa: lê o campo Documentation no Jira
+                                                        v
+                        publica a linha na página "4.0.2501.<aba>" do Confluence
+                                    (com deduplicação: não repete linha)
+```
+
+- **Não é preciso manter lista de versões:** o poller lê a planilha e descobre automaticamente as
+  abas de versão (nomes com 4 dígitos, ex.: `1031`, `1032`). Novas versões são pegas sozinhas.
+- A **aba** define a versão: aba `1031` → página `4.0.2501.1031` (prefixo `4.0.2501.`).
+- O gatilho é a coluna **Status** igual a **`Finalizada`** (as tarefas da seção "Previstas para a
+  versão", ainda não finalizadas, são ignoradas).
+- O **conteúdo** de cada nota continua vindo do campo **Documentation** do Jira (não da planilha).
+- Rodar repetidamente é seguro e barato: a deduplicação ignora o que já está publicado, então as
+  versões antigas (já 100% publicadas) só são lidas e puladas, sem reescrever nada.
+
+### 10.2. Pré-requisito: deixar a planilha legível pelo script
+
+O script lê a planilha por uma URL de export CSV, que **exige que a planilha esteja pública**:
+
+1. Abra a planilha → **Compartilhar** → em "Acesso geral", escolha **"Qualquer pessoa com o link"**
+   com permissão **Leitor**.
+
+> ⚠️ **Atenção de segurança:** isso deixa os dados da planilha (tarefas, desenvolvedores, clientes)
+> acessíveis a qualquer pessoa **na internet** que tenha o link. Confirme que isso é aceitável pela
+> política da empresa. Alternativa mais fechada (não implementada aqui): usar a **API do Google
+> Sheets com uma conta de serviço**, que funciona mesmo com a planilha privada.
+
+### 10.3. Configuração do `.env` (opcional)
+
+**Não é obrigatório mexer no `.env`** — o poller já vem com os valores certos embutidos e descobre
+as abas de versão sozinho. Só acrescente algo se quiser sobrescrever o padrão:
+
+```
+SHEET_ID=1ESvAnD9PpDXRqRWoVDATG_GVXKqZslEgQvs0tFXocNc   # planilha de versões
+VERSION_PREFIX=4.0.2501.                                 # prefixo do título das páginas
+DONE_STATUS=Finalizada                                   # valor da coluna Status que dispara a nota
+SHEET_TABS=                                              # (opcional) fixe abas: 1032,1033 — vazio = auto
+```
+
+- `SHEET_TABS` **vazio ou ausente** = descobre e varre todas as abas de versão automaticamente
+  (recomendado — você nunca precisa editar isso). Preencha (ex.: `SHEET_TABS=1032,1033`) só se
+  quiser limitar a processamento a versões específicas.
+
+### 10.4. Testar manualmente antes de agendar
+
+**Passo 1 — simular (dry-run), sem escrever nada:** mostra o que *seria* publicado.
+
+```bash
+.venv\Scripts\python.exe poller.py --dry-run
+```
+
+(No Windows, dá pra dar duplo clique em `rodar_poller_dryrun.bat`.) A saída indica, por versão,
+quantas tarefas **novas** entrariam, quais chaves, e se a página seria criada — por exemplo:
+
+```
+[dry-run] Versão 4.0.2501.1031: nada novo — 17 tarefa(s) já publicada(s).
+[dry-run] Versão 4.0.2501.1032: 2 NOVA(S) a publicar: ['CWM-3200', 'CWM-3201']  (5 já na página)
+=== Poller finalizado [DRY-RUN]. 2 tarefa(s) NOVA(S) seriam publicadas. ===
+```
+
+**Passo 2 — execução real:**
+
+```bash
+.venv\Scripts\python.exe poller.py
+```
+
+Confira o resultado no terminal e no arquivo `sync.log`. Rode **de novo** e confirme que as linhas
+**não** duplicam (deve aparecer `[skip] ... já está na página`).
+
+### 10.5. Agendamento no Windows (já configurado: 12h e 17h)
+
+Existe uma tarefa agendada chamada **"Notas de versao - poller"** que roda o poller **duas vezes por
+dia, às 12:00 e às 17:00**, usando `pythonw.exe` (sem abrir janela). Ela roda enquanto o usuário
+estiver conectado ao Windows.
+
+Comandos úteis (PowerShell) para gerenciar:
+
+```powershell
+# Ver estado e próximo disparo
+Get-ScheduledTaskInfo -TaskName "Notas de versao - poller"
+
+# Rodar agora, sob demanda (sem esperar o horário)
+Start-ScheduledTask -TaskName "Notas de versao - poller"
+
+# Desativar temporariamente / reativar
+Disable-ScheduledTask -TaskName "Notas de versao - poller"
+Enable-ScheduledTask  -TaskName "Notas de versao - poller"
+
+# Remover de vez
+Unregister-ScheduledTask -TaskName "Notas de versao - poller" -Confirm:$false
+```
+
+Para **recriar** a tarefa (ou mudar os horários), rode em PowerShell:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "C:\versoes-tarefas\.venv\Scripts\pythonw.exe" -Argument '"C:\versoes-tarefas\poller.py"' -WorkingDirectory "C:\versoes-tarefas"
+$t1 = New-ScheduledTaskTrigger -Daily -At 12:00
+$t2 = New-ScheduledTaskTrigger -Daily -At 17:00
+Register-ScheduledTask -TaskName "Notas de versao - poller" -Action $action -Trigger $t1,$t2 -Description "Publica notas de versao no Confluence. Roda 12h e 17h." -Force
+```
+
+> Para rodar **mesmo com o usuário deslogado**, edite a tarefa no Agendador de Tarefas (GUI),
+> aba Geral → "Executar estando o usuário conectado ou não" — isso exige informar a senha do Windows.
+
+Pronto: a partir daí, toda tarefa marcada como `Finalizada` na planilha (versão 1032 em diante) vira
+nota de versão sozinha, no disparo das 12h ou 17h.
+
+### 10.6. Recomendação de segurança (token exposto)
+
+O `.env` atual contém um token de API real. Como boa prática — e porque ele já circulou —
+**gere um novo token e revogue o antigo** em
+https://id.atlassian.com/manage-profile/security/api-tokens, atualizando o `.env` em seguida.
